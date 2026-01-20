@@ -14,17 +14,25 @@
 #include "protocol.h"
 #include "ota.h"
 #include "audio_service.h"
-#include "device_state_event.h"
+#include "device_state.h"
+#include "device_state_machine.h"
 
+// Main event bits
+#define MAIN_EVENT_SCHEDULE             (1 << 0)
+#define MAIN_EVENT_SEND_AUDIO           (1 << 1)
+#define MAIN_EVENT_WAKE_WORD_DETECTED   (1 << 2)
+#define MAIN_EVENT_VAD_CHANGE           (1 << 3)
+#define MAIN_EVENT_ERROR                (1 << 4)
+#define MAIN_EVENT_ACTIVATION_DONE      (1 << 5)
+#define MAIN_EVENT_CLOCK_TICK           (1 << 6)
+#define MAIN_EVENT_NETWORK_CONNECTED    (1 << 7)
+#define MAIN_EVENT_NETWORK_DISCONNECTED (1 << 8)
+#define MAIN_EVENT_TOGGLE_CHAT          (1 << 9)
+#define MAIN_EVENT_START_LISTENING      (1 << 10)
+#define MAIN_EVENT_STOP_LISTENING       (1 << 11)
+#define MAIN_EVENT_STATE_CHANGED        (1 << 12)
+#define MAIN_EVENT_DEVICE_REPORT (2 << 1)  // 新增设备上报事件
 
-#define MAIN_EVENT_SCHEDULE (1 << 0)
-#define MAIN_EVENT_SEND_AUDIO (1 << 1)
-#define MAIN_EVENT_WAKE_WORD_DETECTED (1 << 2)
-#define MAIN_EVENT_VAD_CHANGE (1 << 3)
-#define MAIN_EVENT_ERROR (1 << 4)
-#define MAIN_EVENT_CHECK_NEW_VERSION_DONE (1 << 5)
-#define MAIN_EVENT_CLOCK_TICK (1 << 6)
-#define MAIN_EVENT_DEVICE_REPORT (1 << 7)  // 新增设备上报事件
 
 enum AecMode {
     kAecOff,
@@ -38,30 +46,80 @@ public:
         static Application instance;
         return instance;
     }
-    // 删除拷贝构造函数和赋值运算符
+    // Delete copy constructor and assignment operator
     Application(const Application&) = delete;
     Application& operator=(const Application&) = delete;
 
-    void Start();
-    void MainEventLoop();
-    DeviceState GetDeviceState() const { return device_state_; }
+    /**
+     * Initialize the application
+     * This sets up display, audio, network callbacks, etc.
+     * Network connection starts asynchronously.
+     */
+    void Initialize();
+
+    /**
+     * Run the main event loop
+     * This function runs in the main task and never returns.
+     * It handles all events including network, state changes, and user interactions.
+     */
+    void Run();
+
+    DeviceState GetDeviceState() const { return state_machine_.GetState(); }
     bool IsVoiceDetected() const { return audio_service_.IsVoiceDetected(); }
-    void Schedule(std::function<void()> callback);
-    void SetDeviceState(DeviceState state);
+    
+    /**
+     * Request state transition
+     * Returns true if transition was successful
+     */
+    bool SetDeviceState(DeviceState state);
+
+    /**
+     * Schedule a callback to be executed in the main task
+     */
+    void Schedule(std::function<void()>&& callback);
+
+    /**
+     * Alert with status, message, emotion and optional sound
+     */
     void Alert(const char* status, const char* message, const char* emotion = "", const std::string_view& sound = "");
     void DismissAlert();
+
     void AbortSpeaking(AbortReason reason);
+
+    /**
+     * Toggle chat state (event-based, thread-safe)
+     * Sends MAIN_EVENT_TOGGLE_CHAT to be handled in Run()
+     */
     void ToggleChatState();
+
+    /**
+     * Start listening (event-based, thread-safe)
+     * Sends MAIN_EVENT_START_LISTENING to be handled in Run()
+     */
     void StartListening();
+
+    /**
+     * Stop listening (event-based, thread-safe)
+     * Sends MAIN_EVENT_STOP_LISTENING to be handled in Run()
+     */
     void StopListening();
+
     void Reboot();
     void WakeWordInvoke(const std::string& wake_word);
-    bool UpgradeFirmware(Ota& ota, const std::string& url = "");
+    bool UpgradeFirmware(const std::string& url, const std::string& version = "");
     bool CanEnterSleepMode();
     void SendMcpMessage(const std::string& payload);
     void SetAecMode(AecMode mode);
     AecMode GetAecMode() const { return aec_mode_; }
     void PlaySound(const std::string_view& sound);
+    AudioService& GetAudioService() { return audio_service_; }
+    
+    /**
+     * Reset protocol resources (thread-safe)
+     * Can be called from any task to release resources allocated after network connected
+     * This includes closing audio channel, resetting protocol and ota objects
+     */
+    void ResetProtocol();
     AudioService& GetAudioService() { return audio_service_; }  // 添加音频服务访问方法
     void SendDeviceReport();  // 新增设备上报方法
 
@@ -74,16 +132,37 @@ private:
     std::unique_ptr<Protocol> protocol_;
     EventGroupHandle_t event_group_ = nullptr;
     esp_timer_handle_t clock_timer_handle_ = nullptr;
+    DeviceStateMachine state_machine_;
     esp_timer_handle_t report_timer_handle_ = nullptr;  // 新增上报定时器
     volatile DeviceState device_state_ = kDeviceStateUnknown;
     ListeningMode listening_mode_ = kListeningModeAutoStop;
     AecMode aec_mode_ = kAecOff;
     std::string last_error_message_;
     AudioService audio_service_;
+    std::unique_ptr<Ota> ota_;
 
     bool has_server_time_ = false;
     bool aborted_ = false;
+    bool assets_version_checked_ = false;
+    bool play_popup_on_listening_ = false;  // Flag to play popup sound after state changes to listening
     int clock_ticks_ = 0;
+    TaskHandle_t activation_task_handle_ = nullptr;
+
+
+    // Event handlers
+    void HandleStateChangedEvent();
+    void HandleToggleChatEvent();
+    void HandleStartListeningEvent();
+    void HandleStopListeningEvent();
+    void HandleNetworkConnectedEvent();
+    void HandleNetworkDisconnectedEvent();
+    void HandleActivationDoneEvent();
+    void HandleWakeWordDetectedEvent();
+
+    // Activation task (runs in background)
+    void ActivationTask();
+
+    // Helper methods
     int report_count_ = 0;  // 上报计数器
     TaskHandle_t check_new_version_task_handle_ = nullptr;
     TaskHandle_t main_event_loop_task_handle_ = nullptr;
@@ -91,8 +170,13 @@ private:
     void OnWakeWordDetected();
     void CheckNewVersion(Ota& ota);
     void CheckAssetsVersion();
+    void CheckNewVersion();
+    void InitializeProtocol();
     void ShowActivationCode(const std::string& code, const std::string& message);
     void SetListeningMode(ListeningMode mode);
+    
+    // State change handler called by state machine
+    void OnStateChanged(DeviceState old_state, DeviceState new_state);
     void StartDeviceReportTimer();  // 启动设备上报定时器
     void SendDeviceReportInternal();  // 内部上报方法
     std::string GetDeviceInfoJson();  // 获取设备信息JSON
