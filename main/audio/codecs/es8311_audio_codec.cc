@@ -175,48 +175,32 @@ void Es8311AudioCodec::CreateDuplexChannels(gpio_num_t mclk, gpio_num_t bclk, gp
 }
 
 void Es8311AudioCodec::SetOutputVolume(int volume) {
-    // 确保设备已初始化
     if (dev_ == nullptr) {
-        ESP_LOGE(TAG, "Audio device not initialized, calling UpdateDeviceState");
         UpdateDeviceState();
         if (dev_ == nullptr) {
-            ESP_LOGE(TAG, "Failed to initialize audio device");
             return;
         }
     }
-    
     // 自定义音量映射函数，让前60%的音量变化更明显
     int mapped_volume = MapVolumeForBetterLinearity(volume);
     ESP_ERROR_CHECK(esp_codec_dev_set_out_vol(dev_, mapped_volume));
-    
-    // 更新基类的音量值
     output_volume_ = volume;
-    ESP_LOGI(TAG, "Set output volume to %d (mapped to %d)", output_volume_, mapped_volume);
-    
-    // 保存设置到配置文件
     Settings settings("audio", true);
     settings.SetInt("output_volume", output_volume_);
 }
 
-// 新增音量映射函数 - 极强版本
-// 新增音量映射函数 - 大幅差异化版本
 int Es8311AudioCodec::MapVolumeForBetterLinearity(int volume) {
     if (volume <= 50) {
-        // 前50%使用极强放大：y = (x/50)^0.05 * 70
-        // 0.05次方会让低音量部分极大幅提升，50%时达到70%
         double normalized = volume / 50.0;
-        double mapped = std::pow(normalized, 0.1); // 使用0.05次方极大幅放大低音量
+        double mapped = std::pow(normalized, 0.1);
         return (int)(mapped * 70);
     } else if (volume <= 60) {
-        // 50-60%线性过渡到80%
         double normalized = (volume - 50) / 10.0;
         return 70 + (int)(normalized * 10);
     } else if (volume <= 90) {
-        // 60-90%使用线性过渡：y = 80 + (x-60)/30 * 15
         double normalized = (volume - 60) / 30.0;
         return 80 + (int)(normalized * 15);
     } else {
-        // 90-100%使用0.8次方平滑过渡：y = 95 + (x-90)/10 * 5
         double normalized = (volume - 90) / 10.0;
         double mapped = std::pow(normalized, 0.8);
         return 95 + (int)(mapped * 5);

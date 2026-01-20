@@ -89,6 +89,7 @@ void Application::Initialize() {
     auto codec = board.GetAudioCodec();
     audio_service_.Initialize(codec);
     audio_service_.Start();
+    audio_service_.PlaySound(Lang::Sounds::OGG_START);
 
     AudioServiceCallbacks callbacks;
     callbacks.on_send_queue_available = [this]() {
@@ -143,8 +144,6 @@ void Application::Initialize() {
                 msg += data;
                 display->ShowNotification(msg.c_str(), 30000);
                 xEventGroupSetBits(event_group_, MAIN_EVENT_NETWORK_CONNECTED);
-                //TODO 需要选择合适的地方播放
-                // audio_service_.PlaySound(Lang::Sounds::OGG_NET_OK);
                 break;
             }
             case NetworkEvent::Disconnected:
@@ -330,12 +329,17 @@ void Application::HandleActivationDoneEvent() {
     display->SetChatMessage("system", "");
 
     // Play the success sound to indicate the device is ready
-    audio_service_.PlaySound(Lang::Sounds::OGG_SUCCESS);
+     audio_service_.PlaySound(Lang::Sounds::OGG_NET_OK);
 
     // Release OTA object after activation is complete
     ota_.reset();
     auto& board = Board::GetInstance();
     board.SetPowerSaveLevel(PowerSaveLevel::LOW_POWER);
+
+    // 开机后打开麦克风
+    if (GetDeviceState() == kDeviceStateIdle) {
+        ToggleChatState();
+    }
 }
 
 void Application::ActivationTask() {
@@ -587,8 +591,6 @@ std::string Application::GetDeviceInfoJson() {
     auto& board = Board::GetInstance();
     auto display = board.GetDisplay();
     auto codec = board.GetAudioCodec();
-    //TODO 需要选择合适的地方播放
-    // audio_service_.PlaySound(Lang::Sounds::OGG_START);
     display->SetStatus(Lang::Strings::LOADING_PROTOCOL);
 
     if (ota_->HasMqttConfig()) {
@@ -721,15 +723,8 @@ std::string Application::GetDeviceInfoJson() {
     });
     
     protocol_->Start();
-       // 开机后立即上报一次设备信息
-    ESP_LOGI(TAG, "设备启动完成，发送开机设备上报");
     SendDeviceReport();
-    // 启动设备上报定时器
     StartDeviceReportTimer();
-    //TODO 需测试OTA是否受影响
-    // if (device_state_ == kDeviceStateIdle) {
-        ToggleChatState();
-    // }
 }
 
 
@@ -789,19 +784,7 @@ void Application::ToggleChatState() {
 
 void Application::StartListening() {
     xEventGroupSetBits(event_group_, MAIN_EVENT_START_LISTENING);
-    // 网络连接成功后，只有在设备处于空闲状态时才自动进入监听
-    // 避免在系统升级等过程中被打断
-    // if (device_state_ == kDeviceStateIdle) {
-    //     ToggleChatState();
-    // }
-        
-    // // 开机后立即上报一次设备信息
-    // ESP_LOGI(TAG, "设备启动完成，发送开机设备上报");
-    // SendDeviceReport();
-    // // 启动设备上报定时器（新增）
-    // StartDeviceReportTimer();
 }
-
 
 void Application::StopListening() {
     xEventGroupSetBits(event_group_, MAIN_EVENT_STOP_LISTENING);
@@ -924,8 +907,6 @@ void Application::HandleWakeWordDetectedEvent() {
         // (PlaySound here would be cleared by ResetDecoder in EnableVoiceProcessing)
         play_popup_on_listening_ = true;
         SetListeningMode(aec_mode_ == kAecOff ? kListeningModeAutoStop : kListeningModeRealtime);
-        // Play the wake sound to indicate the wake word is detected
-        audio_service_.PlaySound(Lang::Sounds::OGG_WAKE);
 #endif
     } else if (state == kDeviceStateSpeaking) {
         AbortSpeaking(kAbortReasonWakeWordDetected);
@@ -972,7 +953,7 @@ void Application::HandleStateChangedEvent() {
             // Play popup sound after ResetDecoder (in EnableVoiceProcessing) has been called
             if (play_popup_on_listening_) {
                 play_popup_on_listening_ = false;
-                audio_service_.PlaySound(Lang::Sounds::OGG_POPUP);
+                audio_service_.PlaySound(Lang::Sounds::OGG_WAKE);
             }
             break;
         case kDeviceStateSpeaking:
@@ -1135,15 +1116,11 @@ bool Application::CanEnterSleepMode() {
         return false;
     }
     
-    // 检查音频通道是否关闭
     if (protocol_ && protocol_->IsAudioChannelOpened()) {
-        ESP_LOGI(TAG, "Sleep condition failed: audio channel is open");
         return false;
     }
     
-    // 检查音频服务是否空闲
     if (!audio_service_.IsIdle()) {
-        ESP_LOGI(TAG, "Sleep condition failed: audio service is not idle");
         return false;
     }
     return true;
