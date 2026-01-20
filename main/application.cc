@@ -125,6 +125,7 @@ void Application::Initialize() {
                 xEventGroupSetBits(event_group_, MAIN_EVENT_NETWORK_DISCONNECTED);
                 break;
             case NetworkEvent::Connecting: {
+
                 if (data.empty()) {
                     // Cellular network - registering without carrier info yet
                     display->SetStatus(Lang::Strings::REGISTERING_NETWORK);
@@ -142,6 +143,8 @@ void Application::Initialize() {
                 msg += data;
                 display->ShowNotification(msg.c_str(), 30000);
                 xEventGroupSetBits(event_group_, MAIN_EVENT_NETWORK_CONNECTED);
+                //TODO 需要选择合适的地方播放
+                // audio_service_.PlaySound(Lang::Sounds::OGG_NET_OK);
                 break;
             }
             case NetworkEvent::Disconnected:
@@ -485,47 +488,6 @@ void Application::CheckNewVersion() {
     }
 }
 
-void Application::ShowActivationCode(const std::string& code, const std::string& message) {
-    struct digit_sound {
-        char digit;
-        const std::string_view& sound;
-    };
-    static const std::array<digit_sound, 10> digit_sounds{{
-        digit_sound{'0', Lang::Sounds::OGG_0},
-        digit_sound{'1', Lang::Sounds::OGG_1}, 
-        digit_sound{'2', Lang::Sounds::OGG_2},
-        digit_sound{'3', Lang::Sounds::OGG_3},
-        digit_sound{'4', Lang::Sounds::OGG_4},
-        digit_sound{'5', Lang::Sounds::OGG_5},
-        digit_sound{'6', Lang::Sounds::OGG_6},
-        digit_sound{'7', Lang::Sounds::OGG_7},
-        digit_sound{'8', Lang::Sounds::OGG_8},
-        digit_sound{'9', Lang::Sounds::OGG_9}
-    }};
-
-    // This sentence uses 9KB of SRAM, so we need to wait for it to finish
-    Alert(Lang::Strings::ACTIVATION, message.c_str(), "link", Lang::Sounds::OGG_ACTIVATION);
-
-    for (const auto& digit : code) {
-        auto it = std::find_if(digit_sounds.begin(), digit_sounds.end(),
-            [digit](const digit_sound& ds) { return ds.digit == digit; });
-        if (it != digit_sounds.end()) {
-            audio_service_.PlaySound(it->sound);
-        }
-    }
-}
-
-void Application::Alert(const char* status, const char* message, const char* emotion, const std::string_view& sound) {
-    ESP_LOGW(TAG, "Alert [%s] %s: %s", emotion, status, message);
-    auto display = Board::GetInstance().GetDisplay();
-    display->SetStatus(status);
-    display->SetEmotion(emotion);
-    display->SetChatMessage("system", message);
-    if (!sound.empty()) {
-        audio_service_.PlaySound(sound);
-    }
-}
-
 void Application::StartDeviceReportTimer() {
     ESP_LOGI(TAG, "Initializing device report timer");
     
@@ -568,7 +530,7 @@ void Application::SendDeviceReport() {
 }
 
 void Application::SendDeviceReportInternal() {
-    auto& board = Board::GetInstance();
+    // auto& board = Board::GetInstance();
     std::string device_info = GetDeviceInfoJson();
     if (device_info.empty()) {
         ESP_LOGE(TAG, "Failed to generate device info JSON");
@@ -585,7 +547,7 @@ void Application::SendDeviceReportInternal() {
         if (CanEnterSleepMode()) {
             ESP_LOGI(TAG, "Sleep conditions met, enabling sleep timer for light sleep mode");
             auto& board = Board::GetInstance();
-            board.SetPowerSaveMode(true); // 启用省电模式，这会启用SleepTimer
+            board.SetPowerSaveLevel(PowerSaveLevel::LOW_POWER); // 启用省电模式，这会启用SleepTimer
         } else {
             ESP_LOGI(TAG, "Sleep conditions not met, continuing normal operation");
         }
@@ -621,159 +583,12 @@ std::string Application::GetDeviceInfoJson() {
     return json_str;
 }
 
-void Application::DismissAlert() {
-    if (device_state_ == kDeviceStateIdle) {
-        auto display = Board::GetInstance().GetDisplay();
-        display->SetStatus(Lang::Strings::STANDBY);
-display->SetEmotion("neutral");
-        display->SetChatMessage("system", "");
-    }
-}
-void Application::ToggleChatState() {
-if (device_state_ == kDeviceStateActivating) {
-        SetDeviceState(kDeviceStateIdle);
-        return;
-    } else if (device_state_ == kDeviceStateWifiConfiguring) {
-        audio_service_.EnableAudioTesting(true);
-        SetDeviceState(kDeviceStateAudioTesting);
-        return;
-    } else if (device_state_ == kDeviceStateAudioTesting) {
-        audio_service_.EnableAudioTesting(false);
-        SetDeviceState(kDeviceStateWifiConfiguring);
-        return;
-    }
-
-    if (!protocol_) {
-        ESP_LOGE(TAG, "Protocol not initialized");
-        return;
-    }
-
-    if (device_state_ == kDeviceStateIdle) {
-        Schedule([this]() {
-            if (!protocol_->IsAudioChannelOpened()) {
-                SetDeviceState(kDeviceStateConnecting);
-                if (!protocol_->OpenAudioChannel()) {
-                    return;
-                }
-            }
-
-            SetListeningMode(aec_mode_ == kAecOff ? kListeningModeAutoStop : kListeningModeRealtime);
-        });
-    } else if (device_state_ == kDeviceStateSpeaking) {
-        Schedule([this]() {
-            AbortSpeaking(kAbortReasonNone);
-        });
-    } else if (device_state_ == kDeviceStateListening) {
-        Schedule([this]() {
-            protocol_->CloseAudioChannel();
-        });
-    }
-}
-
-void Application::StartListening() {
-    if (device_state_ == kDeviceStateActivating) {
-        SetDeviceState(kDeviceStateIdle);
-        return;
-    } else if (device_state_ == kDeviceStateWifiConfiguring) {
-        audio_service_.EnableAudioTesting(true);
-        SetDeviceState(kDeviceStateAudioTesting);
-        return;
-    }
-
-    if (!protocol_) {
-        ESP_LOGE(TAG, "Protocol not initialized");
-        return;
-    }
-    
-    if (device_state_ == kDeviceStateIdle) {
-        Schedule([this]() {
-            if (!protocol_->IsAudioChannelOpened()) {
-                SetDeviceState(kDeviceStateConnecting);
-                if (!protocol_->OpenAudioChannel()) {
-                    return;
-                }
-            }
-
-            SetListeningMode(kListeningModeManualStop);
-        });
-    } else if (device_state_ == kDeviceStateSpeaking) {
-        Schedule([this]() {
-            AbortSpeaking(kAbortReasonNone);
-            SetListeningMode(kListeningModeManualStop);
-        });
-    }
-}
-
-void Application::StopListening() {
-    if (device_state_ == kDeviceStateAudioTesting) {
-        audio_service_.EnableAudioTesting(false);
-        SetDeviceState(kDeviceStateWifiConfiguring);
-        return;
-    }
-
-    const std::array<int, 3> valid_states = {
-        kDeviceStateListening,
-        kDeviceStateSpeaking,
-        kDeviceStateIdle,
-    };
-    // If not valid, do nothing
-    if (std::find(valid_states.begin(), valid_states.end(), device_state_) == valid_states.end()) {
-        return;
-}
-
-    Schedule([this]() {
-        if (device_state_ == kDeviceStateListening) {
-            protocol_->SendStopListening();
-            SetDeviceState(kDeviceStateIdle);
-        }
-    });
-}
-
-void Application::Start() {
+ void Application::InitializeProtocol() {
     auto& board = Board::GetInstance();
     auto display = board.GetDisplay();
     auto codec = board.GetAudioCodec();
-    audio_service_.Initialize(codec);
-    audio_service_.Start();
-
-    // 播放开机音效 - 移到AudioService初始化之后
-    audio_service_.PlaySound(Lang::Sounds::OGG_START);
-
-    AudioServiceCallbacks callbacks;
-    callbacks.on_send_queue_available = [this]() {
-        xEventGroupSetBits(event_group_, MAIN_EVENT_SEND_AUDIO);
-    };
-    callbacks.on_wake_word_detected = [this](const std::string& wake_word) {
-        xEventGroupSetBits(event_group_, MAIN_EVENT_WAKE_WORD_DETECTED);
-    };
-    callbacks.on_vad_change = [this](bool speaking) {
-        xEventGroupSetBits(event_group_, MAIN_EVENT_VAD_CHANGE);
-    };
-    audio_service_.SetCallbacks(callbacks);
-
-    // Start the main event loop task with priority 3
-    xTaskCreate([](void* arg) {
-        ((Application*)arg)->MainEventLoop();
-        vTaskDelete(NULL);
-    }, "main_event_loop", 2048 * 4, this, 3, &main_event_loop_task_handle_);
-
-    /* Start the clock timer to update the status bar */
-    esp_timer_start_periodic(clock_timer_handle_, 1000000);
-
-    /* Wait for the network to be ready */
-    board.StartNetwork();
-
-    // Update the status bar immediately to show the network state
-    display->UpdateStatusBar(true);
-
-    // Check for new assets version
-    CheckAssetsVersion();
-
-    // Check for new firmware version or get the MQTT broker address
-    Ota ota;
-    CheckNewVersion(ota);
-
-    // Initialize the protocol
+    //TODO 需要选择合适的地方播放
+    // audio_service_.PlaySound(Lang::Sounds::OGG_START);
     display->SetStatus(Lang::Strings::LOADING_PROTOCOL);
 
     if (ota_->HasMqttConfig()) {
@@ -887,7 +702,7 @@ void Application::Start() {
                 Alert(status->valuestring, message->valuestring, emotion->valuestring, Lang::Sounds::OGG_VIBRATION);
             } else {
                 ESP_LOGW(TAG, "Alert command requires status, message and emotion");
-}
+            }
 #if CONFIG_RECEIVE_CUSTOM_MESSAGE
         } else if (strcmp(type->valuestring, "custom") == 0) {
             auto payload = cJSON_GetObjectItem(root, "payload");
@@ -907,6 +722,7 @@ void Application::Start() {
     
     protocol_->Start();
 }
+
 
 void Application::ShowActivationCode(const std::string& code, const std::string& message) {
     struct digit_sound {
@@ -964,32 +780,19 @@ void Application::ToggleChatState() {
 
 void Application::StartListening() {
     xEventGroupSetBits(event_group_, MAIN_EVENT_START_LISTENING);
-        // Play the network ok sound to indicate the device is connected
-        audio_service_.PlaySound(Lang::Sounds::OGG_NET_OK);
-        
-        // 网络连接成功后，只有在设备处于空闲状态时才自动进入监听
-        // 避免在系统升级等过程中被打断
-        if (device_state_ == kDeviceStateIdle) {
-            ToggleChatState();
-        }
-        
-        // 开机后立即上报一次设备信息
-        ESP_LOGI(TAG, "设备启动完成，发送开机设备上报");
-        SendDeviceReport();
-        
-        // 启动设备上报定时器（新增）
-        StartDeviceReportTimer();
+    // 网络连接成功后，只有在设备处于空闲状态时才自动进入监听
+    // 避免在系统升级等过程中被打断
+    if (device_state_ == kDeviceStateIdle) {
+        ToggleChatState();
     }
+        
+    // 开机后立即上报一次设备信息
+    ESP_LOGI(TAG, "设备启动完成，发送开机设备上报");
+    SendDeviceReport();
+    // 启动设备上报定时器（新增）
+    StartDeviceReportTimer();
 }
 
-// Add a async task to MainLoop
-void Application::Schedule(std::function<void()> callback) {
-    {
-        std::lock_guard<std::mutex> lock(mutex_);
-        main_tasks_.push_back(std::move(callback));
-    }
-    xEventGroupSetBits(event_group_, MAIN_EVENT_SCHEDULE);
-}
 
 void Application::StopListening() {
     xEventGroupSetBits(event_group_, MAIN_EVENT_STOP_LISTENING);
@@ -1172,7 +975,7 @@ void Application::HandleStateChangedEvent() {
                 audio_service_.EnableWakeWordDetection(audio_service_.IsAfeWakeWord());
             }
             
-            if (previous_state != kDeviceStateIdle) {
+            if (GetDeviceState() != kDeviceStateIdle) {
                 audio_service_.ResetDecoder();
             }
             break;

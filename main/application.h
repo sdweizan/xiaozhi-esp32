@@ -31,7 +31,7 @@
 #define MAIN_EVENT_START_LISTENING      (1 << 10)
 #define MAIN_EVENT_STOP_LISTENING       (1 << 11)
 #define MAIN_EVENT_STATE_CHANGED        (1 << 12)
-#define MAIN_EVENT_DEVICE_REPORT (2 << 1)  // 新增设备上报事件
+#define MAIN_EVENT_DEVICE_REPORT (1 << 13)  // 新增设备上报事件
 
 
 enum AecMode {
@@ -120,7 +120,6 @@ public:
      * This includes closing audio channel, resetting protocol and ota objects
      */
     void ResetProtocol();
-    AudioService& GetAudioService() { return audio_service_; }  // 添加音频服务访问方法
     void SendDeviceReport();  // 新增设备上报方法
 
 private:
