@@ -964,7 +964,6 @@ void Application::HandleStateChangedEvent() {
                 // Only AFE wake word can be detected in speaking mode
                 audio_service_.EnableWakeWordDetection(audio_service_.IsAfeWakeWord());
             }
-            
             if (GetDeviceState() != kDeviceStateIdle) {
                 audio_service_.ResetDecoder();
             }
@@ -1112,17 +1111,19 @@ void Application::WakeWordInvoke(const std::string& wake_word) {
 }
 
 bool Application::CanEnterSleepMode() { 
-    if (device_state_ != kDeviceStateIdle) {
+    if (GetDeviceState() != kDeviceStateIdle) {
         return false;
     }
-    
+
     if (protocol_ && protocol_->IsAudioChannelOpened()) {
         return false;
     }
-    
+
     if (!audio_service_.IsIdle()) {
         return false;
     }
+
+    // Now it is safe to enter sleep mode
     return true;
 }
 
