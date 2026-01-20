@@ -547,7 +547,7 @@ void Application::SendDeviceReportInternal() {
         if (CanEnterSleepMode()) {
             ESP_LOGI(TAG, "Sleep conditions met, enabling sleep timer for light sleep mode");
             auto& board = Board::GetInstance();
-            board.SetPowerSaveLevel(PowerSaveLevel::LOW_POWER); // 启用省电模式，这会启用SleepTimer
+            board.GetDisplay()->SetPowerSaveMode(true);
         } else {
             ESP_LOGI(TAG, "Sleep conditions not met, continuing normal operation");
         }
@@ -721,6 +721,15 @@ std::string Application::GetDeviceInfoJson() {
     });
     
     protocol_->Start();
+       // 开机后立即上报一次设备信息
+    ESP_LOGI(TAG, "设备启动完成，发送开机设备上报");
+    SendDeviceReport();
+    // 启动设备上报定时器
+    StartDeviceReportTimer();
+    //TODO 需测试OTA是否受影响
+    // if (device_state_ == kDeviceStateIdle) {
+        ToggleChatState();
+    // }
 }
 
 
@@ -782,15 +791,15 @@ void Application::StartListening() {
     xEventGroupSetBits(event_group_, MAIN_EVENT_START_LISTENING);
     // 网络连接成功后，只有在设备处于空闲状态时才自动进入监听
     // 避免在系统升级等过程中被打断
-    if (device_state_ == kDeviceStateIdle) {
-        ToggleChatState();
-    }
+    // if (device_state_ == kDeviceStateIdle) {
+    //     ToggleChatState();
+    // }
         
-    // 开机后立即上报一次设备信息
-    ESP_LOGI(TAG, "设备启动完成，发送开机设备上报");
-    SendDeviceReport();
-    // 启动设备上报定时器（新增）
-    StartDeviceReportTimer();
+    // // 开机后立即上报一次设备信息
+    // ESP_LOGI(TAG, "设备启动完成，发送开机设备上报");
+    // SendDeviceReport();
+    // // 启动设备上报定时器（新增）
+    // StartDeviceReportTimer();
 }
 
 

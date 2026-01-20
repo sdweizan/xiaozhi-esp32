@@ -46,7 +46,7 @@ private:
 
     void InitializePowerSaveTimer() {
         // Wake word detection will be disabled in light sleep mode
-        sleep_timer_ = new SleepTimer(30);
+        sleep_timer_ = new SleepTimer(150);
         sleep_timer_->OnEnterLightSleepMode([this]() {
             ESP_LOGI(TAG, "Enabling sleep mode");
             // Show the standby screen
