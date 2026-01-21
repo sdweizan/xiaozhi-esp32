@@ -1,8 +1,8 @@
 #include "es8311_audio_codec.h"
-#include "settings.h"  // 添加Settings类头文件
+#include "settings.h"
 
 #include <esp_log.h>
-#include <cmath>  // 添加数学库头文件，用于sqrt和pow函数
+#include <cmath>
 
 #define TAG "Es8311AudioCodec"
 
@@ -58,7 +58,6 @@ Es8311AudioCodec::Es8311AudioCodec(void* i2c_master_handle, i2c_port_t i2c_port,
     } else {
         ESP_LOGI(TAG, "Es8311AudioCodec initialized");
         
-        // 系统启动时自动加载之前保存的音量设置
         Settings settings("audio", true);
         int saved_volume = settings.GetInt("output_volume", output_volume_);
         
@@ -66,11 +65,7 @@ Es8311AudioCodec::Es8311AudioCodec(void* i2c_master_handle, i2c_port_t i2c_port,
         if (saved_volume != output_volume_) {
             output_volume_ = saved_volume;
             ESP_LOGI(TAG, "Loaded saved volume: %d", output_volume_);
-            
-            // 确保设备已初始化并应用音量
             UpdateDeviceState();
-            // 修复：移除重复的音量设置，因为UpdateDeviceState已经处理了
-            // 原来的重复设置逻辑会导致设备初始化时音量被覆盖
         }
     }
 }
@@ -104,7 +99,6 @@ void Es8311AudioCodec::UpdateDeviceState() {
         ESP_ERROR_CHECK(esp_codec_dev_open(dev_, &fs));
         ESP_ERROR_CHECK(esp_codec_dev_set_in_gain(dev_, input_gain_));
         
-        // 修复：使用映射后的音量值而不是原始值
         int mapped_volume = MapVolumeForBetterLinearity(output_volume_);
         ESP_ERROR_CHECK(esp_codec_dev_set_out_vol(dev_, mapped_volume));
         ESP_LOGI(TAG, "Device initialized with volume: %d (mapped to %d)", output_volume_, mapped_volume);
