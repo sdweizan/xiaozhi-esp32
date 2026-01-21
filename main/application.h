@@ -31,7 +31,6 @@
 #define MAIN_EVENT_START_LISTENING      (1 << 10)
 #define MAIN_EVENT_STOP_LISTENING       (1 << 11)
 #define MAIN_EVENT_STATE_CHANGED        (1 << 12)
-#define MAIN_EVENT_DEVICE_REPORT (1 << 13)  // 新增设备上报事件
 
 
 enum AecMode {
@@ -120,7 +119,6 @@ public:
      * This includes closing audio channel, resetting protocol and ota objects
      */
     void ResetProtocol();
-    void SendDeviceReport();  // 新增设备上报方法
 
 private:
     Application();
@@ -132,8 +130,6 @@ private:
     EventGroupHandle_t event_group_ = nullptr;
     esp_timer_handle_t clock_timer_handle_ = nullptr;
     DeviceStateMachine state_machine_;
-    esp_timer_handle_t report_timer_handle_ = nullptr;  // 新增上报定时器
-    volatile DeviceState device_state_ = kDeviceStateUnknown;
     ListeningMode listening_mode_ = kListeningModeAutoStop;
     AecMode aec_mode_ = kAecOff;
     std::string last_error_message_;
@@ -162,12 +158,6 @@ private:
     void ActivationTask();
 
     // Helper methods
-    int report_count_ = 0;  // 上报计数器
-    TaskHandle_t check_new_version_task_handle_ = nullptr;
-    TaskHandle_t main_event_loop_task_handle_ = nullptr;
-
-    void OnWakeWordDetected();
-    void CheckNewVersion(Ota& ota);
     void CheckAssetsVersion();
     void CheckNewVersion();
     void InitializeProtocol();
@@ -176,9 +166,6 @@ private:
     
     // State change handler called by state machine
     void OnStateChanged(DeviceState old_state, DeviceState new_state);
-    void StartDeviceReportTimer();  // 启动设备上报定时器
-    void SendDeviceReportInternal();  // 内部上报方法
-    std::string GetDeviceInfoJson();  // 获取设备信息JSON
 };
 
 

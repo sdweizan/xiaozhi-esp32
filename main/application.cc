@@ -44,29 +44,12 @@ Application::Application() {
         .skip_unhandled_events = true
     };
     esp_timer_create(&clock_timer_args, &clock_timer_handle_);
-
-    // 设备上报定时器
-    esp_timer_create_args_t report_timer_args = {
-        .callback = [](void* arg) {
-            Application* app = (Application*)arg;
-            xEventGroupSetBits(app->event_group_, MAIN_EVENT_DEVICE_REPORT);
-        },
-        .arg = this,
-        .dispatch_method = ESP_TIMER_TASK,
-        .name = "report_timer",
-        .skip_unhandled_events = true
-    };
-    esp_timer_create(&report_timer_args, &report_timer_handle_);
 }
 
 Application::~Application() {
     if (clock_timer_handle_ != nullptr) {
         esp_timer_stop(clock_timer_handle_);
         esp_timer_delete(clock_timer_handle_);
-    }
-    if (report_timer_handle_ != nullptr) {
-        esp_timer_stop(report_timer_handle_);
-        esp_timer_delete(report_timer_handle_);
     }
     vEventGroupDelete(event_group_);
 }
@@ -126,7 +109,6 @@ void Application::Initialize() {
                 xEventGroupSetBits(event_group_, MAIN_EVENT_NETWORK_DISCONNECTED);
                 break;
             case NetworkEvent::Connecting: {
-
                 if (data.empty()) {
                     // Cellular network - registering without carrier info yet
                     display->SetStatus(Lang::Strings::REGISTERING_NETWORK);
@@ -329,13 +311,12 @@ void Application::HandleActivationDoneEvent() {
     display->SetChatMessage("system", "");
 
     // Play the success sound to indicate the device is ready
-     audio_service_.PlaySound(Lang::Sounds::OGG_NET_OK);
+    audio_service_.PlaySound(Lang::Sounds::OGG_NET_OK);
 
     // Release OTA object after activation is complete
     ota_.reset();
     auto& board = Board::GetInstance();
     board.SetPowerSaveLevel(PowerSaveLevel::LOW_POWER);
-
     // 开机后打开麦克风
     if (GetDeviceState() == kDeviceStateIdle) {
         ToggleChatState();
@@ -492,105 +473,11 @@ void Application::CheckNewVersion() {
     }
 }
 
-void Application::StartDeviceReportTimer() {
-    ESP_LOGI(TAG, "Initializing device report timer");
-    
-    // 如果定时器已存在，先停止并删除
-    if (report_timer_handle_ != nullptr) {
-        esp_timer_stop(report_timer_handle_);
-        esp_timer_delete(report_timer_handle_);
-        report_timer_handle_ = nullptr;
-    }
-    
-    // 创建设备上报定时器
-    esp_timer_create_args_t report_timer_args = {
-        .callback = [](void* arg) {
-            Application* app = static_cast<Application*>(arg);
-            app->SendDeviceReportInternal();
-        },
-        .arg = this,
-        .name = "device_report_timer"
-    };
-    
-    if (esp_timer_create(&report_timer_args, &report_timer_handle_) != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to create device report timer");
-        return;
-    }
-    
-    // 启动定时器，每2分钟上报一次
-    uint64_t interval = 2 * 60 * 1000000;
-    if (esp_timer_start_periodic(report_timer_handle_, interval) != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to start device report timer");
-        esp_timer_delete(report_timer_handle_);
-        report_timer_handle_ = nullptr;
-        return;
-    }
-}
-
-void Application::SendDeviceReport() {
-    Schedule([this]() {
-        SendDeviceReportInternal();
-    });
-}
-
-void Application::SendDeviceReportInternal() {
-    // auto& board = Board::GetInstance();
-    std::string device_info = GetDeviceInfoJson();
-    if (device_info.empty()) {
-        ESP_LOGE(TAG, "Failed to generate device info JSON");
-        return;
-    }
-    
-    ESP_LOGI(TAG, "Device report JSON generated: %s", device_info.c_str());
-    protocol_->SendDeviceReport(device_info);
-    report_count_++;
-    ESP_LOGI(TAG, "Device report sent successfully, report count: %d", report_count_);
-    // 每2次上报检查一次休眠条件
-    if (report_count_ % 2 == 0) {
-        ESP_LOGI(TAG, "Reached 2nd report, checking sleep conditions");
-        if (CanEnterSleepMode()) {
-            ESP_LOGI(TAG, "Sleep conditions met, enabling sleep timer for light sleep mode");
-            auto& board = Board::GetInstance();
-            board.GetDisplay()->SetPowerSaveMode(true);
-        } else {
-            ESP_LOGI(TAG, "Sleep conditions not met, continuing normal operation");
-        }
-    }
-}
-
-std::string Application::GetDeviceInfoJson() {
-    auto& board = Board::GetInstance();
-    std::string system_info_json = board.GetSystemInfoJson();
-    if (system_info_json.empty()) {
-        ESP_LOGE(TAG, "Failed to get system info JSON from board");
-        return "";
-    }
-    // 解析现有的系统信息JSON
-    cJSON* root = cJSON_Parse(system_info_json.c_str());
-    if (!root) {
-        ESP_LOGE(TAG, "Failed to parse system info JSON");
-        return "";
-    }
-    
-    // 添加额外的设备状态信息
-    cJSON_AddNumberToObject(root, "device_state", device_state_);
-    cJSON_AddNumberToObject(root, "free_heap", esp_get_free_heap_size());
-    cJSON_AddNumberToObject(root, "report_count", report_count_);
-    
-    // 添加时间戳
-    cJSON_AddNumberToObject(root, "timestamp", time(nullptr));
-    
-    std::string json_str = cJSON_PrintUnformatted(root);
-    cJSON_Delete(root);
-    
-    ESP_LOGI(TAG, "Device info JSON generated successfully, length: %zu bytes", json_str.length());
-    return json_str;
-}
-
- void Application::InitializeProtocol() {
+void Application::InitializeProtocol() {
     auto& board = Board::GetInstance();
     auto display = board.GetDisplay();
     auto codec = board.GetAudioCodec();
+
     display->SetStatus(Lang::Strings::LOADING_PROTOCOL);
 
     if (ota_->HasMqttConfig()) {
@@ -723,10 +610,7 @@ std::string Application::GetDeviceInfoJson() {
     });
     
     protocol_->Start();
-    SendDeviceReport();
-    StartDeviceReportTimer();
 }
-
 
 void Application::ShowActivationCode(const std::string& code, const std::string& message) {
     struct digit_sound {
@@ -964,9 +848,7 @@ void Application::HandleStateChangedEvent() {
                 // Only AFE wake word can be detected in speaking mode
                 audio_service_.EnableWakeWordDetection(audio_service_.IsAfeWakeWord());
             }
-            if (GetDeviceState() != kDeviceStateIdle) {
-                audio_service_.ResetDecoder();
-            }
+            audio_service_.ResetDecoder();
             break;
         case kDeviceStateWifiConfiguring:
             audio_service_.EnableVoiceProcessing(false);
@@ -1177,4 +1059,3 @@ void Application::ResetProtocol() {
         protocol_.reset();
     });
 }
-

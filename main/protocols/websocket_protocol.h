@@ -20,7 +20,6 @@ public:
     bool OpenAudioChannel() override;
     void CloseAudioChannel() override;
     bool IsAudioChannelOpened() const override;
-    void SendDeviceReport(const std::string& device_info) override;
 
 private:
     EventGroupHandle_t event_group_handle_;

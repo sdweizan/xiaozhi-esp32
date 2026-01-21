@@ -45,7 +45,7 @@ private:
 
     void InitializePowerSaveTimer() {
         // Wake word detection will be disabled in light sleep mode
-        sleep_timer_ = new SleepTimer(150);
+        sleep_timer_ = new SleepTimer(30);
         sleep_timer_->OnEnterLightSleepMode([this]() {
             ESP_LOGI(TAG, "Enabling sleep mode");
             // Show the standby screen
@@ -176,33 +176,6 @@ private:
         boot_button_.OnPressUp([this]() {
             if (press_to_talk_tool_ && press_to_talk_tool_->IsPressToTalkEnabled()) {
                 Application::GetInstance().StopListening();
-            }
-        });
-    
-        // 添加双击事件处理
-        boot_button_.OnDoubleClick([this]() {
-            if (press_to_talk_tool_) {
-                bool current_mode = press_to_talk_tool_->IsPressToTalkEnabled();
-                bool new_mode = !current_mode; // 切换模式
-                
-                Settings settings("vendor", true);
-                settings.SetInt("press_to_talk", new_mode ? 1 : 0);
-                
-                delete press_to_talk_tool_;
-                press_to_talk_tool_ = new PressToTalkMcpTool();
-                press_to_talk_tool_->Initialize();
-                
-                auto& app = Application::GetInstance();
-                auto display = Board::GetInstance().GetDisplay();
-                
-                if (new_mode) {
-                    display->ShowNotification("已切换到长按说话模式");
-                    app.PlaySound(Lang::Sounds::OGG_MODE_PTT);
-                } else {
-                    display->ShowNotification("已切换到单击说话模式");
-                    app.PlaySound(Lang::Sounds::OGG_MODE_CONTINUOUS);
-                }
-                
             }
         });
     }
