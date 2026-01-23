@@ -52,7 +52,6 @@ list(APPEND SOURCES
     "boards/common/axp2101.cc"
     "boards/common/backlight.cc"
     "boards/common/button.cc"
-    "boards/common/esp32_camera.cc"
     "boards/common/i2c_device.cc"
     "boards/common/knob.cc"
     "boards/common/power_save_timer.cc"
@@ -757,9 +756,18 @@ if(CONFIG_IDF_TARGET_ESP32)
                              "led/gpio_led.cc"
                              "display/lvgl_display/jpg/image_to_jpeg.cpp"
                              "display/lvgl_display/jpg/jpeg_to_image.c"
-                             "boards/common/esp32_camera.cc"
                              "boards/common/nt26_board.cc"
                              )
+endif()
+
+# Include EspVideo if target is ESP32S3 or ESP32P4
+if(CONFIG_IDF_TARGET_ESP32S3 OR CONFIG_IDF_TARGET_ESP32P4)
+    list(APPEND SOURCES "boards/common/esp_video.cc")
+endif()
+
+# Include Esp32Camera if target is ESP32S3
+if(CONFIG_IDF_TARGET_ESP32S3)
+    list(APPEND SOURCES "boards/common/esp32_camera.cc")
 endif()
 
 idf_component_register(SRCS ${SOURCES}
