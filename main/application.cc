@@ -88,6 +88,11 @@ void Application::Initialize() {
 
     // Add state change listeners
     state_machine_.AddStateChangeListener([this](DeviceState old_state, DeviceState new_state) {
+        if (play_popup_on_listening_) {
+            play_popup_on_listening_ = false;
+            audio_service_.PlaySound(Lang::Sounds::OGG_WAKE);
+        }
+        vTaskDelay(pdMS_TO_TICKS(1200));
         xEventGroupSetBits(event_group_, MAIN_EVENT_STATE_CHANGED);
     });
 
@@ -834,11 +839,6 @@ void Application::HandleStateChangedEvent() {
                 audio_service_.EnableWakeWordDetection(false);
             }
 
-            // Play popup sound after ResetDecoder (in EnableVoiceProcessing) has been called
-            if (play_popup_on_listening_) {
-                play_popup_on_listening_ = false;
-                audio_service_.PlaySound(Lang::Sounds::OGG_WAKE);
-            }
             break;
         case kDeviceStateSpeaking:
             display->SetStatus(Lang::Strings::SPEAKING);

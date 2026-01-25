@@ -8,9 +8,9 @@
 #include "settings.h"
 #include "config.h"
 #include "sleep_timer.h"
-#include "adc_battery_monitor.h"
 #include "press_to_talk_mcp_tool.h"
 #include "assets/lang_config.h"
+#include "power_manager.h"
 
 #include <esp_log.h>
 #include <esp_efuse_table.h>
@@ -28,17 +28,22 @@ private:
     Display* display_ = nullptr;
     Button boot_button_;
     SleepTimer* sleep_timer_ = nullptr;
-    AdcBatteryMonitor* adc_battery_monitor_ = nullptr;
+    PowerManager* power_manager_ = nullptr;
     PressToTalkMcpTool* press_to_talk_tool_ = nullptr;
 
     void InitializeBatteryMonitor() {
-        adc_battery_monitor_ = new AdcBatteryMonitor(ADC_UNIT_1, ADC_CHANNEL_4, 100000, 100000, CHARGING_PIN);
-        adc_battery_monitor_->OnChargingStatusChanged([this](bool is_charging) {
+        power_manager_ = new PowerManager(CHARGING_PIN);
+        power_manager_->OnChargingStatusChanged([this](bool is_charging) {
             if (is_charging) {
-                sleep_timer_->SetEnabled(false);
                 Application::GetInstance().PlaySound(Lang::Sounds::OGG_CHARGING);
+                sleep_timer_->SetEnabled(false);
             } else {
                 sleep_timer_->SetEnabled(true);
+            }
+        });
+        power_manager_->OnLowBatteryAlert([this](uint8_t battery_level) {
+            if (battery_level <= 20) {
+                Application::GetInstance().PlaySound(Lang::Sounds::OGG_LOW_BATTERY);
             }
         });
     }
@@ -149,11 +154,9 @@ private:
                 
                 if (current_state == kDeviceStateIdle) {
                     app.PlaySound(Lang::Sounds::OGG_WAKE);
-                    vTaskDelay(pdMS_TO_TICKS(500));
                     app.ToggleChatState();
                 } else if (current_state == kDeviceStateListening) {
                     app.PlaySound(Lang::Sounds::OGG_BYE);
-                    vTaskDelay(pdMS_TO_TICKS(500));
                     app.ToggleChatState();
                 } else {
                     app.ToggleChatState();
@@ -197,6 +200,12 @@ public:
         InitializeTools();
     }
 
+    ~XminiC3Board() {
+        if (power_manager_) {
+            delete power_manager_;
+        }
+    }
+
     virtual Led* GetLed() override {
         static SingleLed led(BUILTIN_LED_GPIO);
         return &led;
@@ -214,9 +223,14 @@ public:
     }
 
     virtual bool GetBatteryLevel(int& level, bool& charging, bool& discharging) override {
-        charging = adc_battery_monitor_->IsCharging();
-        discharging = adc_battery_monitor_->IsDischarging();
-        level = adc_battery_monitor_->GetBatteryLevel();
+        static bool last_discharging = false;
+        charging = power_manager_->IsCharging();
+        discharging = power_manager_->IsDischarging();
+        if (discharging != last_discharging) {
+            sleep_timer_->SetEnabled(discharging);
+            last_discharging = discharging;
+        }
+        level = power_manager_->GetBatteryLevel();
         return true;
     }
 
