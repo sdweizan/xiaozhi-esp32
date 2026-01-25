@@ -24,7 +24,7 @@ private:
     bool is_alerting_ = false;
     
     const int kLowBatteryAlertThreshold = 15;  // 低电量提醒阈值
-    const int kCheckIntervalUs = 15000000;     // 15秒检查一次
+    const int kCheckIntervalUs = 2000000;     // 2秒检查一次
     const int kAlertIntervalUs = 30000000;     // 30秒提醒一次
     
     // ADC 相关
@@ -295,7 +295,7 @@ public:
             return;
         }
         
-        // 每15秒检查一次
+        // 每2秒检查一次
         ret = esp_timer_start_periodic(timer_handle_, kCheckIntervalUs);
         if (ret != ESP_OK) {
             ESP_LOGE("PowerManager", "Failed to start timer: %s", esp_err_to_name(ret));

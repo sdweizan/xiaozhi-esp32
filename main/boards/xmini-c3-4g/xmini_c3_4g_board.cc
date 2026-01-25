@@ -154,9 +154,11 @@ private:
                 
                 if (current_state == kDeviceStateIdle) {
                     app.PlaySound(Lang::Sounds::OGG_WAKE);
+                    vTaskDelay(pdMS_TO_TICKS(500));
                     app.ToggleChatState();
                 } else if (current_state == kDeviceStateListening) {
                     app.PlaySound(Lang::Sounds::OGG_BYE);
+                    vTaskDelay(pdMS_TO_TICKS(500));
                     app.ToggleChatState();
                 } else {
                     app.ToggleChatState();
