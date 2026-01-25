@@ -196,15 +196,15 @@ private:
         battery_level_ = VoltageToLevel(voltage);
         
         // 调试日志
-        static int log_counter = 0;
-        if (++log_counter >= 5) {
-            log_counter = 0;
-            float raw_adc_v = (adc_value / hardware_.adc_max) * 1100.0f / 1000.0f;
-            float theoretical_v = raw_adc_v * hardware_.divider_ratio;
-            ESP_LOGI("PowerManager", 
-                    "ADC: %lu -> Direct: %.3fV -> Level: %d%% (Theoretical: %.3fV)",
-                    adc_value, voltage, battery_level_, theoretical_v);
-        }
+        // static int log_counter = 0;
+        // if (++log_counter >= 5) {
+        //     log_counter = 0;
+        //     float raw_adc_v = (adc_value / hardware_.adc_max) * 1100.0f / 1000.0f;
+        //     float theoretical_v = raw_adc_v * hardware_.divider_ratio;
+        //     ESP_LOGI("PowerManager", 
+        //             "ADC: %lu -> Direct: %.3fV -> Level: %d%% (Theoretical: %.3fV)",
+        //             adc_value, voltage, battery_level_, theoretical_v);
+        // }
         
         CheckBatteryLevel();
     }
@@ -334,24 +334,6 @@ public:
     
     uint32_t GetRawAdcValue() {
         return ReadAdc();
-    }
-    
-    void SetCalibration(float adc_value_at_4v2) {
-        calibration_.slope = 4.2f / adc_value_at_4v2;
-        ESP_LOGI("PowerManager", "Calibration updated: slope = %.6f (ADC=%.0f @ 4.2V)", 
-                calibration_.slope, adc_value_at_4v2);
-    }
-    
-    void TwoPointCalibration(uint32_t adc1, float volt1, uint32_t adc2, float volt2) {
-        calibration_.slope = (volt2 - volt1) / (adc2 - adc1);
-        calibration_.offset = volt1 - calibration_.slope * adc1;
-        calibration_.is_calibrated = true;
-        
-        ESP_LOGI("PowerManager", "Two-point calibration:");
-        ESP_LOGI("PowerManager", "  Point 1: %lu ADC -> %.2fV", adc1, volt1);
-        ESP_LOGI("PowerManager", "  Point 2: %lu ADC -> %.2fV", adc2, volt2);
-        ESP_LOGI("PowerManager", "  Result: V = %.6f * ADC + %.3f", 
-                calibration_.slope, calibration_.offset);
     }
     
     void OnChargingStatusChanged(std::function<void(bool)> callback) {
