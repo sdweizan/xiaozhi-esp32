@@ -11,14 +11,21 @@
 #include "adc_battery_monitor.h"
 #include "press_to_talk_mcp_tool.h"
 #include "assets/lang_config.h"
+#include "system_info.h"
 
 #include <esp_log.h>
 #include <esp_efuse_table.h>
 #include <driver/i2c_master.h>
 #include <esp_lcd_panel_ops.h>
 #include <esp_lcd_panel_vendor.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
+#include <cstring>
 
 #define TAG "XminiC3Board"
+
+// Enable USB command processor by uncommenting the following line
+#define ENABLE_USB_CMD_PROCESSOR
 
 class XminiC3Board : public Ml307Board {
 private:
@@ -30,6 +37,10 @@ private:
     SleepTimer* sleep_timer_ = nullptr;
     AdcBatteryMonitor* adc_battery_monitor_ = nullptr;
     PressToTalkMcpTool* press_to_talk_tool_ = nullptr;
+
+#ifdef ENABLE_USB_CMD_PROCESSOR
+    void StartUsbCommandProcessor();
+#endif
 
     void InitializeBatteryMonitor() {
         adc_battery_monitor_ = new AdcBatteryMonitor(ADC_UNIT_1, ADC_CHANNEL_4, 100000, 100000, CHARGING_PIN);
@@ -89,7 +100,8 @@ private:
     }
 
     void InitializeSsd1306Display() {
-#ifndef CONFIG_DISABLE_DISPLAY
+        display_ = new NoDisplay();
+        return;
         // SSD1306 config
         esp_lcd_panel_io_i2c_config_t io_config = {
             .dev_addr = 0x3C,
@@ -134,10 +146,6 @@ private:
         ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(panel_, true));
 
         display_ = new OledDisplay(panel_io_, panel_, DISPLAY_WIDTH, DISPLAY_HEIGHT, DISPLAY_MIRROR_X, DISPLAY_MIRROR_Y);
-#else
-        display_ = new NoDisplay();
-        ESP_LOGI(TAG, "Display disabled by config");
-#endif
     }
 
     void InitializeButtons() {
@@ -198,6 +206,11 @@ public:
         InitializeSsd1306Display();
         InitializeButtons();
         InitializeTools();
+
+#ifdef ENABLE_USB_CMD_PROCESSOR
+        // Start USB command processor after long delay to ensure modem initialization is complete
+        StartUsbCommandProcessor();
+#endif
     }
 
     virtual Led* GetLed() override {
@@ -230,5 +243,89 @@ public:
         Ml307Board::SetPowerSaveLevel(level);
     }
 };
+
+#ifdef ENABLE_USB_CMD_PROCESSOR
+
+void XminiC3Board::StartUsbCommandProcessor() {
+    xTaskCreate([](void* arg) {
+        XminiC3Board* board = static_cast<XminiC3Board*>(arg);
+
+        // 主动等待4G模组初始化完成
+        int wait_count = 0;
+        const int max_wait_seconds = 30;
+
+        while (board->modem_ == nullptr && wait_count < max_wait_seconds) {
+            vTaskDelay(pdMS_TO_TICKS(1000));
+            wait_count++;
+            ESP_LOGI(TAG, "Waiting for modem initialization... (%d/%d)", wait_count, max_wait_seconds);
+        }
+
+        if (board->modem_ == nullptr) {
+            ESP_LOGW(TAG, "Modem not ready after %d seconds, but USB command processor will start anyway", max_wait_seconds);
+        } else {
+            ESP_LOGI(TAG, "Modem is ready! Starting USB command processor");
+        }
+
+        char buffer[128];
+        size_t buffer_pos = 0;
+
+        while (1) {
+            // Try to read a character from stdin with timeout
+            int c = fgetc(stdin);
+            if (c == EOF || c < 0 || c > 255) {
+                vTaskDelay(pdMS_TO_TICKS(100));
+                continue;
+            }
+
+            // Ignore control characters (except newline/carriage return)
+            if (c < 32 && c != '\r' && c != '\n') {
+                continue;
+            }
+
+            // Store character in buffer
+            if (c == '\n' || c == '\r') {
+                buffer[buffer_pos] = '\0';
+
+                if (buffer_pos > 0) {
+                    // Check for "getmac" command
+                    if (strcmp(buffer, "getmac") == 0) {
+                        ESP_LOGI(TAG, "Processing getmac command");
+
+                        // Set log level to verbose (highest level)
+                        esp_log_level_set("*", ESP_LOG_VERBOSE);
+
+                        std::string mac_address = SystemInfo::GetMacAddress();
+                        printf("GetMac: %s\n", mac_address.c_str());
+                        fflush(stdout);
+
+                        // Print IMEI
+                        if (board->modem_) {
+                            std::string imei = board->modem_->GetImei();
+                            printf("GetIMEI: %s\n", imei.c_str());
+                            fflush(stdout);
+                        } else {
+                            printf("GetIMEI: Modem not ready\n");
+                            fflush(stdout);
+                        }
+
+                        vTaskDelay(5000 / portTICK_PERIOD_MS);
+
+                        esp_log_level_set("*", ESP_LOG_INFO);
+
+                        ESP_LOGI(TAG, "getmac command completed");
+                    }
+                }
+
+                // Reset buffer
+                buffer_pos = 0;
+            } else if (buffer_pos < sizeof(buffer) - 1) {
+                // Store character if there's space
+                buffer[buffer_pos++] = (char)c;
+            }
+        }
+    }, "usb_cmd", 4096, this, 1, NULL);
+}
+
+#endif // ENABLE_USB_CMD_PROCESSOR
 
 DECLARE_BOARD(XminiC3Board);
