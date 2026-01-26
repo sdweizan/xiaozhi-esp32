@@ -72,7 +72,7 @@ private:
         if (battery_voltage_ < 2.5f) {
             battery_voltage_ = current_voltage;
         } else {
-            battery_voltage_ = current_voltage * 0.3f + battery_voltage_ * 0.7f;
+            battery_voltage_ = current_voltage * 0.2f + battery_voltage_ * 0.8f;
         }
         return battery_voltage_;
     }
