@@ -69,7 +69,7 @@ private:
         current_voltage = std::max(0.0f, std::min(5.0f, current_voltage));
         
         // 平滑滤波
-        if (battery_voltage_ < 0.1f) {
+        if (battery_voltage_ < 2.5f) {
             battery_voltage_ = current_voltage;
         } else {
             battery_voltage_ = current_voltage * 0.3f + battery_voltage_ * 0.7f;
