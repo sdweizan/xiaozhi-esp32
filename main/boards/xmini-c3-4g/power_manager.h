@@ -25,7 +25,7 @@ private:
     
     const int kLowBatteryAlertThreshold = 15;  // 低电量提醒阈值
     const int kCheckIntervalUs = 2000000;     // 2秒检查一次
-    const int kAlertIntervalUs = 30000000;     // 30秒提醒一次
+    const int kAlertIntervalUs = 300000000;     // 300秒提醒一次
     
     // ADC 相关
     adc_oneshot_unit_handle_t adc_handle_;
