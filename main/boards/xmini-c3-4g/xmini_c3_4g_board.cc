@@ -33,6 +33,11 @@ private:
 
     void InitializeBatteryMonitor() {
         power_manager_ = new PowerManager(CHARGING_PIN);
+        power_manager_->OnLowBatteryAlert([this](uint8_t battery_level) {
+            Application::GetInstance().PlaySound(Lang::Sounds::OGG_LOW_BATTERY);
+        });
+        
+        power_manager_->Start();
         power_manager_->OnChargingStatusChanged([this](bool is_charging) {
             if (is_charging) {
                 Application::GetInstance().PlaySound(Lang::Sounds::OGG_CHARGING);
@@ -41,11 +46,7 @@ private:
                 sleep_timer_->SetEnabled(true);
             }
         });
-        power_manager_->OnLowBatteryAlert([this](uint8_t battery_level) {
-            if (battery_level <= 15) {
-                Application::GetInstance().PlaySound(Lang::Sounds::OGG_LOW_BATTERY);
-            }
-        });
+        
     }
 
     void InitializePowerSaveTimer() {
