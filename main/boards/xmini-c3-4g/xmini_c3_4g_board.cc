@@ -42,7 +42,7 @@ private:
             }
         });
         power_manager_->OnLowBatteryAlert([this](uint8_t battery_level) {
-            if (battery_level <= 20) {
+            if (battery_level <= 15) {
                 Application::GetInstance().PlaySound(Lang::Sounds::OGG_LOW_BATTERY);
             }
         });
@@ -154,11 +154,9 @@ private:
                 
                 if (current_state == kDeviceStateIdle) {
                     app.PlaySound(Lang::Sounds::OGG_WAKE);
-                    vTaskDelay(pdMS_TO_TICKS(500));
                     app.ToggleChatState();
                 } else if (current_state == kDeviceStateListening) {
                     app.PlaySound(Lang::Sounds::OGG_BYE);
-                    vTaskDelay(pdMS_TO_TICKS(500));
                     app.ToggleChatState();
                 } else {
                     app.ToggleChatState();
@@ -184,6 +182,7 @@ private:
             }
         });
     }
+ 
 
     void InitializeTools() {
         press_to_talk_tool_ = new PressToTalkMcpTool();
@@ -225,13 +224,8 @@ public:
     }
 
     virtual bool GetBatteryLevel(int& level, bool& charging, bool& discharging) override {
-        static bool last_discharging = false;
         charging = power_manager_->IsCharging();
         discharging = power_manager_->IsDischarging();
-        if (discharging != last_discharging) {
-            sleep_timer_->SetEnabled(discharging);
-            last_discharging = discharging;
-        }
         level = power_manager_->GetBatteryLevel();
         return true;
     }
