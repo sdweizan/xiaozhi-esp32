@@ -833,9 +833,10 @@ void Application::HandleStateChangedEvent() {
                 audio_service_.EnableVoiceProcessing(true);
                 audio_service_.EnableWakeWordDetection(false);
             }
+            // Play popup sound after ResetDecoder (in EnableVoiceProcessing) has been called
             if (play_popup_on_listening_) {
                 play_popup_on_listening_ = false;
-                audio_service_.PlaySound(Lang::Sounds::OGG_POPUP);
+                audio_service_.PlaySound(Lang::Sounds::OGG_WAKE);
             }
             break;
         case kDeviceStateSpeaking:
