@@ -10,6 +10,7 @@
 #include "sleep_timer.h"
 #include "adc_battery_monitor.h"
 #include "press_to_talk_mcp_tool.h"
+#include "assets/lang_config.h"
 
 #include <esp_log.h>
 #include <esp_efuse_table.h>
@@ -31,10 +32,11 @@ private:
     PressToTalkMcpTool* press_to_talk_tool_ = nullptr;
 
     void InitializeBatteryMonitor() {
-        adc_battery_monitor_ = new AdcBatteryMonitor(ADC_UNIT_1, ADC_CHANNEL_4, 100000, 100000, GPIO_NUM_12);
+        adc_battery_monitor_ = new AdcBatteryMonitor(ADC_UNIT_1, ADC_CHANNEL_4, 100000, 100000, CHARGING_PIN);
         adc_battery_monitor_->OnChargingStatusChanged([this](bool is_charging) {
             if (is_charging) {
                 sleep_timer_->SetEnabled(false);
+                Application::GetInstance().PlaySound(Lang::Sounds::OGG_CHARGING);
             } else {
                 sleep_timer_->SetEnabled(true);
             }
@@ -139,13 +141,37 @@ private:
     }
 
     void InitializeButtons() {
+        static int64_t press_down_time = 0;
+        static const int64_t LONG_PRESS_THRESHOLD_MS = 500;
+        
         boot_button_.OnClick([this]() {
             auto& app = Application::GetInstance();
+            
             if (!press_to_talk_tool_ || !press_to_talk_tool_->IsPressToTalkEnabled()) {
-                app.ToggleChatState();
+                DeviceState current_state = app.GetDeviceState();
+                
+                if (current_state == kDeviceStateIdle) {
+                    app.PlaySound(Lang::Sounds::OGG_WAKE);
+                    vTaskDelay(pdMS_TO_TICKS(500));
+                    app.ToggleChatState();
+                } else if (current_state == kDeviceStateListening) {
+                    app.PlaySound(Lang::Sounds::OGG_BYE);
+                    vTaskDelay(pdMS_TO_TICKS(500));
+                    app.ToggleChatState();
+                } else {
+                    app.ToggleChatState();
+                }
+            } else {
+                int64_t current_time = esp_timer_get_time() / 1000;
+                int64_t press_duration = current_time - press_down_time;
+                
+                if (press_duration < LONG_PRESS_THRESHOLD_MS) {
+                    app.PlaySound(Lang::Sounds::OGG_MODE_PTT_BTN_SOUND);
+                }
             }
         });
         boot_button_.OnPressDown([this]() {
+            press_down_time = esp_timer_get_time() / 1000;
             if (press_to_talk_tool_ && press_to_talk_tool_->IsPressToTalkEnabled()) {
                 Application::GetInstance().StartListening();
             }

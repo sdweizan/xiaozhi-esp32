@@ -72,6 +72,7 @@ void Application::Initialize() {
     auto codec = board.GetAudioCodec();
     audio_service_.Initialize(codec);
     audio_service_.Start();
+    audio_service_.PlaySound(Lang::Sounds::OGG_START);
 
     AudioServiceCallbacks callbacks;
     callbacks.on_send_queue_available = [this]() {
@@ -310,12 +311,16 @@ void Application::HandleActivationDoneEvent() {
     display->SetChatMessage("system", "");
 
     // Play the success sound to indicate the device is ready
-    audio_service_.PlaySound(Lang::Sounds::OGG_SUCCESS);
+    audio_service_.PlaySound(Lang::Sounds::OGG_NET_OK);
 
     // Release OTA object after activation is complete
     ota_.reset();
     auto& board = Board::GetInstance();
     board.SetPowerSaveLevel(PowerSaveLevel::LOW_POWER);
+    // 开机后打开麦克风
+    if (GetDeviceState() == kDeviceStateIdle) {
+        ToggleChatState();
+    }
 }
 
 void Application::ActivationTask() {
@@ -832,7 +837,7 @@ void Application::HandleStateChangedEvent() {
             // Play popup sound after ResetDecoder (in EnableVoiceProcessing) has been called
             if (play_popup_on_listening_) {
                 play_popup_on_listening_ = false;
-                audio_service_.PlaySound(Lang::Sounds::OGG_POPUP);
+                audio_service_.PlaySound(Lang::Sounds::OGG_WAKE);
             }
             break;
         case kDeviceStateSpeaking:
@@ -1054,4 +1059,3 @@ void Application::ResetProtocol() {
         protocol_.reset();
     });
 }
-
