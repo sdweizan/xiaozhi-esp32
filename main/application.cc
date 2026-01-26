@@ -59,6 +59,7 @@ bool Application::SetDeviceState(DeviceState state) {
 }
 
 void Application::Initialize() {
+    
     auto& board = Board::GetInstance();
     SetDeviceState(kDeviceStateStarting);
 

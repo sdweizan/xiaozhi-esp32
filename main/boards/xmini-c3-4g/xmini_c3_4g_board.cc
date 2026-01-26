@@ -89,8 +89,7 @@ private:
     }
 
     void InitializeSsd1306Display() {
-        display_ = new NoDisplay();
-        return;
+#ifndef CONFIG_DISABLE_DISPLAY
         // SSD1306 config
         esp_lcd_panel_io_i2c_config_t io_config = {
             .dev_addr = 0x3C,
@@ -135,6 +134,10 @@ private:
         ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(panel_, true));
 
         display_ = new OledDisplay(panel_io_, panel_, DISPLAY_WIDTH, DISPLAY_HEIGHT, DISPLAY_MIRROR_X, DISPLAY_MIRROR_Y);
+#else
+        display_ = new NoDisplay();
+        ESP_LOGI(TAG, "Display disabled by config");
+#endif
     }
 
     void InitializeButtons() {
