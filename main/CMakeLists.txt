@@ -201,6 +201,11 @@ elseif(CONFIG_BOARD_TYPE_M5STACK_ATOM_S3R_CAM_M12_ECHO_BASE)
     set(BOARD_TYPE "atoms3r-cam-m12-echo-base")
 elseif(CONFIG_BOARD_TYPE_M5STACK_ATOM_ECHOS3R)
     set(BOARD_TYPE "atom-echos3r")
+elseif(CONFIG_BOARD_TYPE_M5STACK_CARDPUTER_ADV)
+    set(BOARD_TYPE "m5stack-cardputer-adv")
+    set(BUILTIN_TEXT_FONT font_puhui_basic_20_4)
+    set(BUILTIN_ICON_FONT font_awesome_20_4)
+    set(DEFAULT_EMOJI_COLLECTION twemoji_32)
 elseif(CONFIG_BOARD_TYPE_M5STACK_ATOM_MATRIX_ECHO_BASE)
     set(BOARD_TYPE "atommatrix-echo-base")
 elseif(CONFIG_BOARD_TYPE_XMINI_C3_V3)
@@ -779,6 +784,8 @@ if(CONFIG_IDF_TARGET_ESP32)
                              "display/lvgl_display/jpg/image_to_jpeg.cpp"
                              "display/lvgl_display/jpg/jpeg_to_image.c"
                              "boards/common/nt26_board.cc"
+                             "boards/common/ml307_board.cc"
+                             "boards/common/dual_network_board.cc"
                              )
 endif()
 
