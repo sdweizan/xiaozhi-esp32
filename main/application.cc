@@ -310,17 +310,20 @@ void Application::HandleActivationDoneEvent() {
     display->ShowNotification(message.c_str());
     display->SetChatMessage("system", "");
 
-    // Play the success sound to indicate the device is ready
-    audio_service_.PlaySound(Lang::Sounds::OGG_NET_OK);
 
     // Release OTA object after activation is complete
     ota_.reset();
     auto& board = Board::GetInstance();
     board.SetPowerSaveLevel(PowerSaveLevel::LOW_POWER);
-    // 开机后打开麦克风
-    if (GetDeviceState() == kDeviceStateIdle) {
-        ToggleChatState();
-    }
+
+    Schedule([this]() {
+        // Play the success sound to indicate the device is ready
+        audio_service_.PlaySound(Lang::Sounds::OGG_NET_OK);
+        // 开机后打开麦克风
+        if (GetDeviceState() == kDeviceStateIdle) {
+            ToggleChatState();
+        }
+    });
 }
 
 void Application::ActivationTask() {

@@ -10,6 +10,7 @@
 #include "sleep_timer.h"
 #include "press_to_talk_mcp_tool.h"
 #include "assets/lang_config.h"
+#include "system_info.h"
 #include "power_manager.h"
 
 #include <esp_log.h>
@@ -17,8 +18,15 @@
 #include <driver/i2c_master.h>
 #include <esp_lcd_panel_ops.h>
 #include <esp_lcd_panel_vendor.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
+#include <cstring>
+#include <driver/gpio.h>
 
 #define TAG "XminiC3Board"
+
+// Enable USB command processor by uncommenting the following line
+#define ENABLE_USB_CMD_PROCESSOR
 
 class XminiC3Board : public Ml307Board {
 private:
@@ -30,6 +38,11 @@ private:
     SleepTimer* sleep_timer_ = nullptr;
     PowerManager* power_manager_ = nullptr;
     PressToTalkMcpTool* press_to_talk_tool_ = nullptr;
+    bool touch_sensor_initialized_ = false;
+
+#ifdef ENABLE_USB_CMD_PROCESSOR
+    void StartUsbCommandProcessor();
+#endif
 
     void InitializeBatteryMonitor() {
         power_manager_ = new PowerManager(CHARGING_PIN);
@@ -200,6 +213,9 @@ public:
         InitializeSsd1306Display();
         InitializeButtons();
         InitializeTools();
+#ifdef ENABLE_USB_CMD_PROCESSOR
+        StartUsbCommandProcessor();
+#endif
     }
 
     ~XminiC3Board() {
@@ -209,7 +225,7 @@ public:
     }
 
     virtual Led* GetLed() override {
-        static SingleLed led(BUILTIN_LED_GPIO);
+        static NoLed led;
         return &led;
     }
 
@@ -238,5 +254,83 @@ public:
         Ml307Board::SetPowerSaveLevel(level);
     }
 };
+
+#ifdef ENABLE_USB_CMD_PROCESSOR
+
+void XminiC3Board::StartUsbCommandProcessor() {
+    xTaskCreate([](void* arg) {
+        XminiC3Board* board = static_cast<XminiC3Board*>(arg);
+
+        // Wait for modem initialization
+        int wait_count = 0;
+        const int max_wait_seconds = 30;
+
+        while (board->modem_ == nullptr && wait_count < max_wait_seconds) {
+            vTaskDelay(pdMS_TO_TICKS(1000));
+            wait_count++;
+            ESP_LOGI(TAG, "Waiting for modem initialization... (%d/%d)", wait_count, max_wait_seconds);
+        }
+
+        if (board->modem_ == nullptr) {
+            ESP_LOGW(TAG, "Modem not ready after %d seconds, but USB command processor will start anyway", max_wait_seconds);
+        } else {
+            ESP_LOGI(TAG, "Modem is ready! Starting USB command processor");
+        }
+
+        char buffer[128];
+        size_t buffer_pos = 0;
+
+        while (1) {
+            int c = fgetc(stdin);
+            if (c == EOF || c < 0 || c > 255) {
+                vTaskDelay(pdMS_TO_TICKS(100));
+                continue;
+            }
+
+            if (c < 32 && c != '\r' && c != '\n') {
+                continue;
+            }
+
+            if (c == '\n' || c == '\r') {
+                buffer[buffer_pos] = '\0';
+
+                if (buffer_pos > 0) {
+                    if (strcmp(buffer, "getmac") == 0) {
+                        ESP_LOGI(TAG, "Processing getmac command");
+
+                        esp_log_level_set("*", ESP_LOG_VERBOSE);
+
+                        std::string mac_address = SystemInfo::GetMacAddress();
+                        printf("GetMac: %s\n", mac_address.c_str());
+                        fflush(stdout);
+
+                        if (board->modem_) {
+                            std::string imei = board->modem_->GetImei();
+                            std::string iccid = board->modem_->GetIccid();
+                            printf("GetIMEI: %s\n", imei.c_str());
+                            printf("GetICCID: %s\n", iccid.c_str());
+                            fflush(stdout);
+                        } else {
+                            printf("4G Modem not ready\n");
+                            fflush(stdout);
+                        }
+
+                        vTaskDelay(5000 / portTICK_PERIOD_MS);
+
+                        esp_log_level_set("*", ESP_LOG_INFO);
+
+                        ESP_LOGI(TAG, "getmac command completed");
+                    }
+                }
+
+                buffer_pos = 0;
+            } else if (buffer_pos < sizeof(buffer) - 1) {
+                buffer[buffer_pos++] = (char)c;
+            }
+        }
+    }, "usb_cmd", 4096, this, 1, NULL);
+}
+
+#endif // ENABLE_USB_CMD_PROCESSOR
 
 DECLARE_BOARD(XminiC3Board);
