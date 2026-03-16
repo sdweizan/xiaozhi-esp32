@@ -24,7 +24,7 @@
 #include <freertos/semphr.h>
 #include <freertos/task.h>
 
-#define TAG "EchoEar"
+#define TAG "ESP-VoCat"
 
 
 temperature_sensor_handle_t temp_sensor = NULL;
@@ -282,7 +282,7 @@ public:
         // Create touch interrupt semaphore
         touch_isr_mux_ = xSemaphoreCreateBinary();
         if (touch_isr_mux_ == NULL) {
-            ESP_LOGE("EchoEar", "Failed to create touch semaphore");
+            ESP_LOGE(TAG, "Failed to create touch semaphore");
         }
     }
 
@@ -319,15 +319,15 @@ public:
             // Press event (transition from not touched to touched)
             press_count_++;
             event = TOUCH_PRESS;
-            ESP_LOGI("EchoEar", "TOUCH PRESS - count: %d, x: %d, y: %d", press_count_, tp_.x, tp_.y);
+            ESP_LOGI(TAG, "TOUCH PRESS - count: %d, x: %d, y: %d", press_count_, tp_.x, tp_.y);
         } else if (!is_touched && was_touched_) {
             // Release event (transition from touched to not touched)
             event = TOUCH_RELEASE;
-            ESP_LOGI("EchoEar", "TOUCH RELEASE - total presses: %d", press_count_);
+            ESP_LOGI(TAG, "TOUCH RELEASE - total presses: %d", press_count_);
         } else if (is_touched && was_touched_) {
             // Continuous touch (hold)
             event = TOUCH_HOLD;
-            ESP_LOGD("EchoEar", "TOUCH HOLD - x: %d, y: %d", tp_.x, tp_.y);
+            ESP_LOGD(TAG, "TOUCH HOLD - x: %d, y: %d", tp_.x, tp_.y);
         }
 
         // Update previous state
@@ -380,7 +380,7 @@ private:
     SemaphoreHandle_t touch_isr_mux_;
 };
 
-class EchoEar : public WifiBoard {
+class EspVocat : public WifiBoard {
 private:
     i2c_master_bus_handle_t i2c_bus_;
     Cst816s* cst816s_;
@@ -391,6 +391,8 @@ private:
     esp_timer_handle_t touchpad_timer_;
     esp_lcd_touch_handle_t tp;   // LCD touch handle
     EspVideo* camera_ = nullptr;
+    TaskHandle_t charge_task_handle_ = nullptr;
+    TaskHandle_t touch_task_handle_ = nullptr;
 
     void InitializeI2c()
     {
@@ -416,10 +418,10 @@ private:
     uint8_t DetectPcbVersion()
     {
         esp_err_t ret = i2c_master_probe(i2c_bus_, 0x18, 100);
-        uint8_t pcb_verison = 0;
+        uint8_t pcb_version = 0;
         if (ret == ESP_OK) {
-            ESP_LOGI(TAG, "PCB verison V1.0");
-            pcb_verison = 0;
+            ESP_LOGI(TAG, "PCB version V1.0");
+            pcb_version = 0;
         } else {
             gpio_config_t gpio_conf = {
                 .pin_bit_mask = (1ULL << GPIO_NUM_48),
@@ -433,8 +435,8 @@ private:
             vTaskDelay(pdMS_TO_TICKS(100));
             ret = i2c_master_probe(i2c_bus_, 0x18, 100);
             if (ret == ESP_OK) {
-                ESP_LOGI(TAG, "PCB verison V1.2");
-                pcb_verison = 1;
+                ESP_LOGI(TAG, "PCB version V1.2");
+                pcb_version = 1;
                 AUDIO_I2S_GPIO_DIN = AUDIO_I2S_GPIO_DIN_2;
                 AUDIO_CODEC_PA_PIN = AUDIO_CODEC_PA_PIN_2;
                 QSPI_PIN_NUM_LCD_RST = QSPI_PIN_NUM_LCD_RST_2;
@@ -446,7 +448,7 @@ private:
 
             }
         }
-        return pcb_verison;
+        return pcb_version;
     }
 
     static void touch_isr_callback(void* arg)
@@ -469,7 +471,7 @@ private:
         while (true) {
             if (touchpad->WaitForTouchEvent()) {
                 auto &app = Application::GetInstance();
-                auto &board = (EchoEar &)Board::GetInstance();
+                auto &board = (EspVocat &)Board::GetInstance();
 
                 ESP_LOGD(TAG, "Touch event, TP_PIN_NUM_INT: %d", gpio_get_level(TP_PIN_NUM_INT));
                 touchpad->UpdateTouchPoint();
@@ -489,14 +491,14 @@ private:
     void InitializeCharge()
     {
         charge_ = new Charge(i2c_bus_, 0x55);
-        xTaskCreatePinnedToCore(Charge::TaskFunction, "batterydecTask", 3 * 1024, charge_, 6, NULL, 0);
+        xTaskCreatePinnedToCore(Charge::TaskFunction, "batterydecTask", 3 * 1024, charge_, 6, &charge_task_handle_, 0);
     }
 
     void InitializeCst816sTouchPad()
     {
         cst816s_ = new Cst816s(i2c_bus_, 0x15);
 
-        xTaskCreatePinnedToCore(touch_event_task, "touch_task", 4 * 1024, cst816s_, 5, NULL, 1);
+        xTaskCreatePinnedToCore(touch_event_task, "touch_task", 4 * 1024, cst816s_, 5, &touch_task_handle_, 1);
 
         const gpio_config_t int_gpio_config = {
             .pin_bit_mask = (1ULL << TP_PIN_NUM_INT),
@@ -507,7 +509,7 @@ private:
         gpio_config(&int_gpio_config);
         gpio_install_isr_service(0);
         gpio_intr_enable(TP_PIN_NUM_INT);
-        gpio_isr_handler_add(TP_PIN_NUM_INT, EchoEar::touch_isr_callback, cst816s_);
+        gpio_isr_handler_add(TP_PIN_NUM_INT, EspVocat::touch_isr_callback, cst816s_);
     }
 
     void InitializeSpi()
@@ -521,7 +523,7 @@ private:
         ESP_ERROR_CHECK(spi_bus_initialize(QSPI_LCD_HOST, &bus_config, SPI_DMA_CH_AUTO));
     }
 
-    void Initializest77916Display(uint8_t pcb_verison)
+    void InitializeSt77916Display(uint8_t pcb_version)
     {
 
         esp_lcd_panel_io_handle_t panel_io = nullptr;
@@ -541,7 +543,7 @@ private:
             .rgb_ele_order = LCD_RGB_ELEMENT_ORDER_RGB,
             .bits_per_pixel = QSPI_LCD_BIT_PER_PIXEL,
             .flags = {
-                .reset_active_high = pcb_verison,
+                .reset_active_high = pcb_version,
             },
             .vendor_config = &vendor_config,
         };
@@ -610,15 +612,43 @@ private:
 #endif // CONFIG_ESP_VIDEO_ENABLE_USB_UVC_VIDEO_DEVICE
 
 public:
-    EchoEar() : boot_button_(BOOT_BUTTON_GPIO)
+    ~EspVocat() {
+        // Stop tasks
+        if (charge_task_handle_ != nullptr) {
+            vTaskDelete(charge_task_handle_);
+        }
+        if (touch_task_handle_ != nullptr) {
+            vTaskDelete(touch_task_handle_);
+        }
+
+        // Delete objects
+        delete charge_;
+        delete cst816s_;
+        delete display_;
+        // Note: backlight_ (PwmBacklight) and camera_ (EspVideo) are not deleted here
+        // because their base classes (Backlight, Camera) don't have virtual destructors.
+        // Since EspVocat is a singleton that lives for the device lifetime, this is acceptable.
+
+        // Remove GPIO ISR handler
+        gpio_isr_handler_remove(TP_PIN_NUM_INT);
+
+        // Disable temperature sensor
+        if (temp_sensor != NULL) {
+            temperature_sensor_disable(temp_sensor);
+            temperature_sensor_uninstall(temp_sensor);
+            temp_sensor = NULL;
+        }
+    }
+
+    EspVocat() : boot_button_(BOOT_BUTTON_GPIO)
     {
         InitializeI2c();
-        uint8_t pcb_verison = DetectPcbVersion();
+        uint8_t pcb_version = DetectPcbVersion();
         InitializeCharge();
         InitializeCst816sTouchPad();
 
         InitializeSpi();
-        Initializest77916Display(pcb_verison);
+        InitializeSt77916Display(pcb_version);
         InitializeButtons();
 #ifdef CONFIG_ESP_VIDEO_ENABLE_USB_UVC_VIDEO_DEVICE
         InitializeCamera();
@@ -663,4 +693,4 @@ public:
     }
 };
 
-DECLARE_BOARD(EchoEar);
+DECLARE_BOARD(EspVocat);
