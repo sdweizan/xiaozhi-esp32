@@ -592,6 +592,11 @@ elseif(CONFIG_BOARD_TYPE_ATK_DNESP32S3M_4G)
     set(BUILTIN_TEXT_FONT font_puhui_basic_16_4)
     set(BUILTIN_ICON_FONT font_awesome_16_4)
     set(DEFAULT_EMOJI_COLLECTION twemoji_32)
+elseif(CONFIG_BOARD_TYPE_ATK_DNESP32S3_BOX3)
+    set(BOARD_TYPE "atk-dnesp32s3-box3")
+    set(BUILTIN_TEXT_FONT font_puhui_basic_20_4)
+    set(BUILTIN_ICON_FONT font_awesome_20_4)
+    set(DEFAULT_EMOJI_COLLECTION twemoji_64)
 elseif(CONFIG_BOARD_TYPE_DU_CHATX)
     set(BOARD_TYPE "du-chatx")
     set(BUILTIN_TEXT_FONT font_puhui_basic_16_4)
@@ -936,6 +941,14 @@ if(CONFIG_IDF_TARGET_ESP32S3)
     list(APPEND SOURCES "boards/common/esp32_camera.cc")
 endif()
 
+set(MAIN_PRIV_REQUIRES_EXTRA "")
+if(CONFIG_BOARD_TYPE_ESP_VOCAT)
+    list(APPEND MAIN_PRIV_REQUIRES_EXTRA
+        espressif__touch_slider_sensor
+        espressif__touch_button_sensor
+    )
+endif()
+
 idf_component_register(SRCS ${SOURCES}
                     EMBED_FILES ${LANG_SOUNDS} ${COMMON_SOUNDS}
                     INCLUDE_DIRS ${INCLUDE_DIRS}
@@ -958,6 +971,7 @@ idf_component_register(SRCS ${SOURCES}
                         efuse
                         bt
                         fatfs
+                        ${MAIN_PRIV_REQUIRES_EXTRA}
                     )
 
 # Use target_compile_definitions to define BOARD_TYPE, BOARD_NAME

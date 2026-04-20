@@ -171,15 +171,13 @@ void Es8311AudioCodec::CreateDuplexChannels(gpio_num_t mclk, gpio_num_t bclk, gp
 }
 
 void Es8311AudioCodec::SetOutputVolume(int volume) {
-    if (dev_ == nullptr) {
-        UpdateDeviceState();
-        if (dev_ == nullptr) {
-            return;
-        }
-    }
+    std::lock_guard<std::mutex> lock(data_if_mutex_);
     // 自定义音量映射函数，让前60%的音量变化更明显
     int mapped_volume = MapVolumeForBetterLinearity(volume);
-    ESP_ERROR_CHECK(esp_codec_dev_set_out_vol(dev_, mapped_volume));
+        if (dev_ != nullptr) {
+        ESP_ERROR_CHECK(esp_codec_dev_set_out_vol(dev_, mapped_volume));
+    }
+    AudioCodec::SetOutputVolume(mapped_volume);
     output_volume_ = volume;
     Settings settings("audio", true);
     settings.SetInt("output_volume", output_volume_);
